@@ -1,7 +1,14 @@
 const express = require('express');
+const cors = require('cors');
 const app = express();
 
+// Allow the frontend (S3/Amplify/other origin) to call this API.
+// Set CORS_ORIGIN to your frontend URL in production, e.g. http://my-site.s3-website.eu-west-2.amazonaws.com
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
+
+// Health check for EC2 / load balancer
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // Trainer product list (10 items)
 let products = [
@@ -40,4 +47,28 @@ app.post('/products', (req, res) => {
   res.status(201).json(newProduct);
 });
 
-app.listen(3000, () => console.log("Server running on port 3000"));
+// POST simulated checkout/order
+let orders = [];
+app.post('/orders', (req, res) => {
+  const items = req.body.items;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: "Cart is empty" });
+  }
+  let total = 0;
+  for (const item of items) {
+    const product = products.find(p => p.id === parseInt(item.id));
+    const qty = parseInt(item.quantity) || 1;
+    if (!product) return res.status(404).json({ message: `Trainer ${item.id} not found` });
+    if (product.stock < qty) return res.status(400).json({ message: `Not enough stock for ${product.name}` });
+    total += product.price * qty;
+  }
+  for (const item of items) {
+    products.find(p => p.id === parseInt(item.id)).stock -= parseInt(item.quantity) || 1;
+  }
+  const order = { id: orders.length + 1, items, total, status: "confirmed", createdAt: new Date().toISOString() };
+  orders.push(order);
+  res.status(201).json(order);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
