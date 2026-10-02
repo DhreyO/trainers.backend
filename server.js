@@ -2,12 +2,28 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
+const rateLimit = require('express-rate-limit');
 const app = express();
+
+// Behind Nginx: trust the proxy so rate limiting sees the real visitor IP
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
 
 // Allow the frontend (S3/Amplify/other origin) to call this API.
 // Set CORS_ORIGIN to your frontend URL in production, e.g. http://my-site.s3-website.eu-west-2.amazonaws.com
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
+
+// Basic abuse protection: 300 requests per 15 minutes per IP
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300 }));
+
+// Only allow admin actions when the request carries ADMIN_KEY
+const requireAdmin = (req, res, next) => {
+  if (!process.env.ADMIN_KEY || req.get('x-admin-key') !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  next();
+};
 
 // RDS (MySQL) connection — set these on EC2, never in the frontend
 const db = mysql.createPool({
@@ -108,7 +124,7 @@ app.get('/products/:id', async (req, res) => {
 });
 
 // POST new trainer
-app.post('/products', async (req, res) => {
+app.post('/products', requireAdmin, async (req, res) => {
   const { name, price, image, sizes, stock } = req.body;
   try {
     const [result] = await db.query('INSERT INTO products (name, price, image, sizes, stock) VALUES (?, ?, ?, ?, ?)',
@@ -158,8 +174,10 @@ app.post('/orders', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// Set HOST=127.0.0.1 when Nginx is in front, so port 3000 is unreachable from outside
+const HOST = process.env.HOST || '0.0.0.0';
 initDb()
-  .then(() => app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`)))
+  .then(() => app.listen(PORT, HOST, () => console.log(`Server running on ${HOST}:${PORT}`)))
   .catch(err => {
     console.error('Could not connect to RDS:', err.message);
     process.exit(1);
