@@ -69,20 +69,17 @@ function normalize(record, label) {
 /**
  * Reconcile system A against system B.
  *
- * Every record in A is judged independently (a trade_id repeated in A can
- * match the same unique B record more than once).
+ * trade_ids are assumed unique within A. trade_ids that exist only in B are
+ * ignored. Sorting is by code unit (plain string comparison), not locale.
  *
- * @returns {{ matched: Array, unmatched: Array }}
- *   matched:   [{ trade_id, price_a, price_b }]
- *   unmatched: [{ trade_id, price_a, reason, price_b? }]
- *     reason is 'missing_in_b' | 'duplicate_in_b' | 'price_out_of_tolerance'
+ * @returns {string[]} sorted trade_ids from A that match B
  */
 function reconcile(systemA, systemB, tolerance) {
   if (!Array.isArray(systemA) || !Array.isArray(systemB)) {
     throw new TypeError('systemA and systemB must be arrays');
   }
   const tol = toDecimal(tolerance, 'tolerance');
-  if (tol.units < 0n) throw new RangeError('tolerance must be non-negative');
+  if (tol.units <= 0n) throw new RangeError('tolerance must be greater than 0');
 
   // trade_id -> record, or DUPLICATE if it appears more than once in B.
   const DUPLICATE = Symbol('duplicate');
@@ -93,22 +90,15 @@ function reconcile(systemA, systemB, tolerance) {
   });
 
   const matched = [];
-  const unmatched = [];
   systemA.forEach((rec, i) => {
     const a = normalize(rec, `systemA[${i}]`);
     const b = index.get(a.trade_id);
-    if (b === undefined) {
-      unmatched.push({ trade_id: a.trade_id, price_a: a.price, reason: 'missing_in_b' });
-    } else if (b === DUPLICATE) {
-      unmatched.push({ trade_id: a.trade_id, price_a: a.price, reason: 'duplicate_in_b' });
-    } else if (!withinTolerance(a.decimal, b.decimal, tol)) {
-      unmatched.push({ trade_id: a.trade_id, price_a: a.price, price_b: b.price, reason: 'price_out_of_tolerance' });
-    } else {
-      matched.push({ trade_id: a.trade_id, price_a: a.price, price_b: b.price });
+    if (b !== undefined && b !== DUPLICATE && withinTolerance(a.decimal, b.decimal, tol)) {
+      matched.push(a.trade_id);
     }
   });
 
-  return { matched, unmatched };
+  return matched.sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
 }
 
 module.exports = { reconcile, withinTolerance, toDecimal };
