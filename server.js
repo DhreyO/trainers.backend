@@ -15,7 +15,7 @@ const db = mysql.createPool({
   port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'trainers',
+  database: process.env.DB_NAME || 'trainers-db1',
   connectionLimit: 10
 });
 
@@ -59,11 +59,19 @@ async function initDb() {
   }
 }
 
-// mysql2 returns DECIMAL as string and JSON may come back as string
-const toProduct = row => ({
+// sizes may be a JSON column, a JSON string or plain "7,8,9" text
+const parseSizes = sizes => {
+  if (Array.isArray(sizes)) return sizes;
+  if (!sizes) return [];
+  try { return JSON.parse(sizes); } catch { return String(sizes).split(',').map(Number); }
+};
+
+// mysql2 returns DECIMAL as string; fall back to image_url if image is empty
+const toProduct = ({ image_url, ...row }) => ({
   ...row,
   price: Number(row.price),
-  sizes: typeof row.sizes === 'string' ? JSON.parse(row.sizes) : row.sizes
+  image: row.image || image_url || null,
+  sizes: parseSizes(row.sizes)
 });
 
 // Health check for EC2 / load balancer (also checks RDS)
