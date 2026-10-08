@@ -28,7 +28,7 @@
    - Modify: `db.t4g.micro`, Single-AZ, 20 GB gp3, backup retention 1 day, Performance Insights and Enhanced Monitoring off, Public access **No**
    - Check the engine version: if MySQL 5.7/8.0, check for Extended Support charges and upgrade to 8.4
 
-3. **Close port 3000 with Nginx**
+3. ✅ **Close port 3000 with Nginx** (done 2026-10-08). Verified: `http://<IP>/health` OK, `:3000` times out
    - `git pull && npm install` in `~/trainers.backend`
    - Install Nginx → `sudo cp deploy/nginx-trainers.conf /etc/nginx/conf.d/trainers.conf` → `sudo nginx -t && sudo systemctl enable --now nginx`
    - `.env`: add `HOST=127.0.0.1` and `ADMIN_KEY=<openssl rand -hex 24>` → `pm2 restart trainers --update-env && pm2 save`
