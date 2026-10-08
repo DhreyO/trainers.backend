@@ -17,11 +17,13 @@
 **Start-up order:** start RDS → wait until "Available" → start EC2 → note the **new public IP**
 (it changes on every stop/start, because there's no Elastic IP)
 
-1. **Bring it back up**
+1. ✅ **Bring it back up** (done 2026-10-08)
    - SSH/Session Manager into EC2 → `pm2 status` → `curl localhost:3000/health` should return `{"status":"ok","db":"ok"}`
    - Frontend `.env`: `VITE_API_URL=http://<new-IP>:3000` (or `http://<new-IP>` once Nginx is in place)
 
-2. **Cut RDS cost** (biggest bill)
+2. ✅ **Cut RDS cost** (done 2026-10-08). Finding: already a right-sized micro instance; the cost (~$17 in Aug) came from running 24/7
+   - Fix: EventBridge Scheduler nightly `StopDBInstance` (+ EC2 `StopInstances`), Budgets alert, snapshot+delete for breaks over 7 days
+   - Expected: ~$3/month
    - Cost Explorer → Service = RDS → Group by **Usage type**: find the driver
    - Modify: `db.t4g.micro`, Single-AZ, 20 GB gp3, backup retention 1 day, Performance Insights and Enhanced Monitoring off, Public access **No**
    - Check the engine version: if MySQL 5.7/8.0, check for Extended Support charges and upgrade to 8.4
