@@ -35,7 +35,10 @@
    - Security group: allow **80**, remove **3000**, set SSH 22 to **My IP**
    - RDS security group: 3306 **only from the EC2 security group**
 
-4. **Fix the frontend build**
+4. 🔄 **Fix the frontend build** (in progress 2026-10-08)
+   - Done: deleted unused `ProductsPage.tsx`; App.tsx line 3 → `const API = import.meta.env.VITE_API_URL ?? '';`
+   - Done: `.env.development` (EC2 IP for `npm run dev`) and `.env.production` (empty → relative paths)
+   - Remaining: make sure line 3 has no leftover `||`, then `npm run build` → `dist/` with `index.html` + `assets/`
    - Replace `tsconfig.json` with the version that has `"jsx": "react-jsx"` and `"types": ["vite/client"]`
    - Delete leftover starter files (`src/main.ts`, `src/counter.ts`)
    - `npm run build` → creates `dist/`
@@ -55,6 +58,9 @@
    - `scripts/aws-start.sh` / `aws-stop.sh` (start RDS → EC2 → update the CloudFront origin; stop in reverse)
    - README with architecture diagram + reasoning (cost, security, trade-offs) for interviews
    - Open a PR and merge this branch into `main`
+
+## Study notes
+See `LESSONS.md` for an in-depth explanation of everything built, plus interview questions and a quiz.
 
 ## Ask Claude to pick up from
 > "Continue from NEXT_STEPS.md in trainers.backend — I'm on step N."
