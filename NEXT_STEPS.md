@@ -44,16 +44,25 @@
    - `cp scripts/aws.env.example scripts/aws.env`, fill in IDs → `./scripts/deploy-frontend.sh`
    - Test: `https://<id>.cloudfront.net` → browse, details, images, cart, checkout
 
-6. **Harden** (README setup 3–6)
-   - EC2 port 80 only from prefix list `com.amazonaws.global.cloudfront.origin-facing`
-   - IAM role (SSM core + GetParameter/Decrypt) → Session Manager works → delete SSH rule
-   - `/trainers/db-password` SecureString → `.env`: `DB_PASSWORD_PARAM=/trainers/db-password` (code ready ✅)
+6. 🔄 **Harden** (README setup 3–6)
+   - ✅ 6A: EC2 port 80 only from prefix list `com.amazonaws.global.cloudfront.origin-facing` (direct IP times out, CloudFront works)
+   - 6B: Parameter Store `/trainers/db-password` (SecureString) → IAM role `trainers-ec2-role` (AmazonSSMManagedInstanceCore + inline `read-db-password`) → attach to EC2 → connect via Session Manager
+   - 6C: EC2 `.env`: remove `DB_PASSWORD`, add `DB_PASSWORD_PARAM=/trainers/db-password` + `AWS_REGION=eu-west-2` → `pm2 restart trainers --update-env` → log says "DB password loaded from Parameter Store"
+   - 6D: delete the SSH 22 rule
 
 7. **Automate & document**
    - ✅ `scripts/aws-start.sh`, `aws-stop.sh`, `deploy-frontend.sh` (tested with a mocked AWS CLI)
    - ✅ `README.md` with architecture, decisions, setup
-   - Budgets alert + EventBridge nightly stop (README setup 7)
-   - Merge the PR into `main`
+   - 7A: AWS Budgets ($10/month, alert at 80%)
+   - 7B: EventBridge Scheduler nightly stop (RDS StopDBInstance + EC2 StopInstances)
+   - 7C: Mac: `brew install jq`, `aws configure`, fill `scripts/aws.env` → first real run of the scripts
+   - 7D: merge https://github.com/DhreyO/trainers.backend/pull/1 into `main`
+
+## ⚠️ Tomorrow's start-up (CloudFront needs EC2's new address)
+1. Start RDS → wait for **Available** → start EC2
+2. Copy EC2's new **Public IPv4 DNS** → CloudFront → `trainers-store` → **Origins** → `ec2-api` → **Edit** → paste the new domain → Save (≈5 min to deploy)
+   (once 7C is set up, `./scripts/aws-start.sh` does all of this automatically)
+3. Check `https://<id>.cloudfront.net/health` → `{"status":"ok","db":"ok"}`
 
 ## Study notes
 See `LESSONS.md` for an in-depth explanation of everything built, plus interview questions and a quiz.
