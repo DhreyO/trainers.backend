@@ -26,14 +26,32 @@ const requireAdmin = (req, res, next) => {
 };
 
 // RDS (MySQL) connection — set these on EC2, never in the frontend
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'trainers-db1',
-  connectionLimit: 10
-});
+let db;
+
+// DB password: from SSM Parameter Store (SecureString, read via the EC2 IAM role)
+// when DB_PASSWORD_PARAM is set, otherwise from DB_PASSWORD in .env
+async function getDbPassword() {
+  if (!process.env.DB_PASSWORD_PARAM) return process.env.DB_PASSWORD;
+  const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+  const ssm = new SSMClient({ region: process.env.AWS_REGION || 'eu-west-2' });
+  const { Parameter } = await ssm.send(new GetParameterCommand({
+    Name: process.env.DB_PASSWORD_PARAM,
+    WithDecryption: true
+  }));
+  console.log(`DB password loaded from Parameter Store (${process.env.DB_PASSWORD_PARAM})`);
+  return Parameter.Value;
+}
+
+async function createPool() {
+  db = mysql.createPool({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306,
+    user: process.env.DB_USER,
+    password: await getDbPassword(),
+    database: process.env.DB_NAME || 'trainers-db1',
+    connectionLimit: 10
+  });
+}
 
 // Seed data — images are served directly from S3, the DB stores their URLs
 const S3 = process.env.S3_BASE_URL || 'https://dhrey-store-v3.s3.eu-west-2.amazonaws.com';
@@ -176,9 +194,10 @@ app.post('/orders', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 // Set HOST=127.0.0.1 when Nginx is in front, so port 3000 is unreachable from outside
 const HOST = process.env.HOST || '0.0.0.0';
-initDb()
+createPool()
+  .then(initDb)
   .then(() => app.listen(PORT, HOST, () => console.log(`Server running on ${HOST}:${PORT}`)))
   .catch(err => {
-    console.error('Could not connect to RDS:', err.message);
+    console.error('Startup failed (RDS or Parameter Store):', err.message);
     process.exit(1);
   });
