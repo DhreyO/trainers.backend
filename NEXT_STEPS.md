@@ -39,7 +39,7 @@
    - Also fixed on EC2: pm2 wasn't set to start on boot (502 after restart) → `pm2 save` + `pm2 startup`
    - Dependency audit fixed (proxy-addr, body-parser, qs, ip-address) → 0 vulnerabilities
 
-5. **Host the frontend: S3 + CloudFront** (follow README → "One-time AWS setup" 1–2)
+5. ✅ **Host the frontend: S3 + CloudFront** (done 2026-11-02): site + images load via `https://<id>.cloudfront.net`; OAC bucket policy auto-added by the console wizard
    - Private bucket `dhrey-trainers-site` + CloudFront (OAC), EC2 origin named **`ec2-api`**, behaviours `/products*`, `/orders*`, `/health` (CachingDisabled + AllViewerExceptHostHeader)
    - `cp scripts/aws.env.example scripts/aws.env`, fill in IDs → `./scripts/deploy-frontend.sh`
    - Test: `https://<id>.cloudfront.net` → browse, details, images, cart, checkout
