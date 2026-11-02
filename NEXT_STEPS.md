@@ -35,13 +35,9 @@
    - Security group: allow **80**, remove **3000**, set SSH 22 to **My IP**
    - RDS security group: 3306 **only from the EC2 security group**
 
-4. 🔄 **Fix the frontend build** (in progress 2026-10-08)
-   - Done: deleted unused `ProductsPage.tsx`; App.tsx line 3 → `const API = import.meta.env.VITE_API_URL ?? '';`
-   - Done: `.env.development` (EC2 IP for `npm run dev`) and `.env.production` (empty → relative paths)
-   - Remaining: make sure line 3 has no leftover `||`, then `npm run build` → `dist/` with `index.html` + `assets/`
-   - Replace `tsconfig.json` with the version that has `"jsx": "react-jsx"` and `"types": ["vite/client"]`
-   - Delete leftover starter files (`src/main.ts`, `src/counter.ts`)
-   - `npm run build` → creates `dist/`
+4. ✅ **Fix the frontend build** (done 2026-11-02): `npm run build` → `dist/`; API uses `?? ''` (relative paths in production)
+   - Also fixed on EC2: pm2 wasn't set to start on boot (502 after restart) → `pm2 save` + `pm2 startup`
+   - Dependency audit fixed (proxy-addr, body-parser, qs, ip-address) → 0 vulnerabilities
 
 5. **Host the frontend: S3 + CloudFront** (follow README → "One-time AWS setup" 1–2)
    - Private bucket `dhrey-trainers-site` + CloudFront (OAC), EC2 origin named **`ec2-api`**, behaviours `/products*`, `/orders*`, `/health` (CachingDisabled + AllViewerExceptHostHeader)
