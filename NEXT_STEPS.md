@@ -43,21 +43,21 @@
    - Delete leftover starter files (`src/main.ts`, `src/counter.ts`)
    - `npm run build` → creates `dist/`
 
-5. **Host the frontend**
-   - New **private** S3 bucket for the site (separate from the images bucket)
-   - CloudFront with two origins: S3 (via **OAC**) as default, EC2 for `/products*`, `/orders*`, `/health` (caching disabled)
-   - Frontend calls relative paths, so it no longer needs the EC2 IP or a rebuild when the IP changes
-   - EC2 port 80 only from the prefix list `com.amazonaws.global.cloudfront.origin-facing`
-   - Set `CORS_ORIGIN` in EC2 `.env` to the CloudFront URL
+5. **Host the frontend: S3 + CloudFront** (follow README → "One-time AWS setup" 1–2)
+   - Private bucket `dhrey-trainers-site` + CloudFront (OAC), EC2 origin named **`ec2-api`**, behaviours `/products*`, `/orders*`, `/health` (CachingDisabled + AllViewerExceptHostHeader)
+   - `cp scripts/aws.env.example scripts/aws.env`, fill in IDs → `./scripts/deploy-frontend.sh`
+   - Test: `https://<id>.cloudfront.net` → browse, details, images, cart, checkout
 
-6. **Extra hardening (SAA showcase)**
-   - Replace SSH with **SSM Session Manager** (remove port 22)
-   - DB password in **SSM Parameter Store (SecureString)**, read via the EC2 **IAM role**
+6. **Harden** (README setup 3–6)
+   - EC2 port 80 only from prefix list `com.amazonaws.global.cloudfront.origin-facing`
+   - IAM role (SSM core + GetParameter/Decrypt) → Session Manager works → delete SSH rule
+   - `/trainers/db-password` SecureString → `.env`: `DB_PASSWORD_PARAM=/trainers/db-password` (code ready ✅)
 
 7. **Automate & document**
-   - `scripts/aws-start.sh` / `aws-stop.sh` (start RDS → EC2 → update the CloudFront origin; stop in reverse)
-   - README with architecture diagram + reasoning (cost, security, trade-offs) for interviews
-   - Open a PR and merge this branch into `main`
+   - ✅ `scripts/aws-start.sh`, `aws-stop.sh`, `deploy-frontend.sh` (tested with a mocked AWS CLI)
+   - ✅ `README.md` with architecture, decisions, setup
+   - Budgets alert + EventBridge nightly stop (README setup 7)
+   - Merge the PR into `main`
 
 ## Study notes
 See `LESSONS.md` for an in-depth explanation of everything built, plus interview questions and a quiz.
