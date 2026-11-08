@@ -147,7 +147,7 @@ IAM → Roles → Create role → AWS service **EC2** → attach **AmazonSSMMana
   "Version": "2012-10-17",
   "Statement": [
     { "Effect": "Allow", "Action": "ssm:GetParameter",
-      "Resource": "arn:aws:ssm:eu-west-2:<ACCOUNT_ID>:parameter/trainers/db-password" },
+      "Resource": "arn:aws:ssm:eu-west-2:<ACCOUNT_ID>:parameter/trainersdb1/dev/db-password" },
     { "Effect": "Allow", "Action": "kms:Decrypt",
       "Resource": "*",
       "Condition": { "StringEquals": { "kms:ViaService": "ssm.eu-west-2.amazonaws.com" } } }
@@ -160,8 +160,8 @@ EC2 → instance → Actions → Security → **Modify IAM role** → select it.
 With the role attached (and the SSM agent, pre-installed on Amazon Linux): EC2 → instance → **Connect → Session Manager**. Once it works, delete the SSH rule.
 
 ### 6. DB password in Parameter Store
-Systems Manager → Parameter Store → Create: name `/trainers/db-password`, type **SecureString**, value = DB password.
-On EC2, in `.env`: remove `DB_PASSWORD`, add `DB_PASSWORD_PARAM=/trainers/db-password` and `AWS_REGION=eu-west-2` → `pm2 restart trainers --update-env`. The log shows *"DB password loaded from Parameter Store"*.
+Systems Manager → Parameter Store → Create: name `/trainersdb1/dev/db-password`, type **SecureString**, value = DB password.
+On EC2, in `.env`: remove `DB_PASSWORD`, add `DB_PASSWORD_PARAM=/trainersdb1/dev/db-password` and `AWS_REGION=eu-west-2` → `pm2 restart trainers --update-env`. The log shows *"DB password loaded from Parameter Store"*.
 
 ### 7. Cost guardrails
 - **Budgets:** monthly cost budget $10, alert at 80%.
