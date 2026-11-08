@@ -101,7 +101,7 @@ cp scripts/aws.env.example scripts/aws.env && nano scripts/aws.env   # once
 ./scripts/deploy-frontend.sh    # build React app → S3 → invalidate CloudFront
 ./scripts/aws-stop.sh           # EC2 → RDS
 ```
-Requires AWS CLI v2 (`aws configure`) and `jq` (`brew install jq`).
+Requires AWS CLI v2 (sign in with `aws login`) and `jq` (built into recent macOS).
 
 ---
 
