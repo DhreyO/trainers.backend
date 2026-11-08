@@ -18,7 +18,7 @@
 (it changes on every stop/start, because there's no Elastic IP)
 
 1. ✅ **Bring it back up** (done 2026-10-08)
-   - SSH/Session Manager into EC2 → `pm2 status` → `curl localhost:3000/health` should return `{"status":"ok","db":"ok"}`
+   - Session Manager into EC2 (EC2 → Connect → Session Manager; SSH is closed) → `pm2 status` → `curl localhost:3000/health` should return `{"status":"ok","db":"ok"}`
    - Frontend `.env`: `VITE_API_URL=http://<new-IP>:3000` (or `http://<new-IP>` once Nginx is in place)
 
 2. ✅ **Cut RDS cost** (done 2026-10-08). Finding: already a right-sized micro instance; the cost (~$17 in Aug) came from running 24/7
@@ -44,11 +44,12 @@
    - `cp scripts/aws.env.example scripts/aws.env`, fill in IDs → `./scripts/deploy-frontend.sh`
    - Test: `https://<id>.cloudfront.net` → browse, details, images, cart, checkout
 
-6. 🔄 **Harden** (README setup 3–6)
-   - ✅ 6A: EC2 port 80 only from prefix list `com.amazonaws.global.cloudfront.origin-facing` (direct IP times out, CloudFront works)
-   - 6B: Parameter Store `/trainers/db-password` (SecureString) → IAM role `trainers-ec2-role` (AmazonSSMManagedInstanceCore + inline `read-db-password`) → attach to EC2 → connect via Session Manager
-   - 6C: EC2 `.env`: remove `DB_PASSWORD`, add `DB_PASSWORD_PARAM=/trainers/db-password` + `AWS_REGION=eu-west-2` → `pm2 restart trainers --update-env` → log says "DB password loaded from Parameter Store"
-   - 6D: delete the SSH 22 rule
+6. ✅ **Harden** (done 2026-11-08)
+   - ✅ 6A: EC2 port 80 only from prefix list `com.amazonaws.global.cloudfront.origin-facing`
+   - ✅ 6B: reused existing SecureString `/trainersdb1/dev/db-password`; IAM role `trainers-ec2-role` = AmazonSSMManagedInstanceCore + inline policy (GetParameter on that one parameter, kms:Decrypt via SSM)
+   - ✅ 6C: `.env` has `DB_PASSWORD_PARAM=/trainersdb1/dev/db-password` + `AWS_REGION=eu-west-2`, no password on disk; log shows "DB password loaded from Parameter Store"
+   - ✅ 6D: Session Manager connected; SSH 22 rule deleted. EC2 inbound = only HTTP 80 from CloudFront
+   - Optional: `/trainersdb1/dev/db-url` (String) — keep only if it holds just the endpoint, never a password
 
 7. **Automate & document**
    - ✅ `scripts/aws-start.sh`, `aws-stop.sh`, `deploy-frontend.sh` (tested with a mocked AWS CLI)
@@ -57,10 +58,11 @@
    - 7B: EventBridge Scheduler nightly stop (RDS StopDBInstance + EC2 StopInstances)
    - 7C: Mac: `brew install jq`, `aws configure`, fill `scripts/aws.env` → first real run of the scripts
    - 7D: merge https://github.com/DhreyO/trainers.backend/pull/1 into `main`
+   - 7E (optional): upgrade Node on EC2 to 22 (AWS SDK warning)
 
-## ⚠️ Tomorrow's start-up (CloudFront needs EC2's new address)
+## ⚠️ Start-up (CloudFront needs EC2's new address)
 1. Start RDS → wait for **Available** → start EC2
-2. Copy EC2's new **Public IPv4 DNS** → CloudFront → `trainers-store` → **Origins** → `ec2-api` → **Edit** → paste the new domain → Save (≈5 min to deploy)
+2. **Copy** (don't type) EC2's new **Public IPv4 DNS** — it uses dashes: `ec2-18-130-58-114…`, not dots → CloudFront → `trainers-store` → **Origins** → `ec2-api` → **Edit** → paste the new domain → Save (≈5 min to deploy)
    (once 7C is set up, `./scripts/aws-start.sh` does all of this automatically)
 3. Check `https://<id>.cloudfront.net/health` → `{"status":"ok","db":"ok"}`
 

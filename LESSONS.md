@@ -17,7 +17,8 @@ My study guide for this project, built to practise the AWS Solutions Architect A
 | 1–2 Oct 2026 | Fixed "can't retrieve trainers" (CORS), got the React frontend building, connected it to EC2, moved the backend from hard-coded data to **RDS**, checkout working end to end |
 | 8 Oct 2026 | Cost analysis (RDS ran 24/7), **Nginx** reverse proxy, port 3000 closed, admin key + rate limiting, frontend prepared for CloudFront |
 | 2 Nov 2026 | Fixed pm2 auto-start and dependency vulnerabilities, production build, **S3 + CloudFront (OAC)** live over HTTPS, **EC2 locked to CloudFront only** |
-| _Next session_ | Parameter Store + IAM role, Session Manager (remove SSH), Budgets, nightly stop, scripts, merge PR |
+| 8 Nov 2026 | Fixed CloudFront 502 (origin typo), **DB password from Parameter Store via IAM role**, **Session Manager** working, **SSH port closed**. EC2 now has a single inbound rule (HTTP 80 from CloudFront) |
+| _Next_ | Budgets, nightly stop, scripts on the Mac, merge PR, Node 22 |
 
 ---
 
@@ -189,7 +190,7 @@ Keeps Node running after you log out and restarts it if it crashes. Two bugs we 
 | 443 | CloudFront | Internet | The only public entry, over HTTPS |
 | 80 | EC2 | **CloudFront prefix list only** | Direct `http://<EC2-IP>` times out |
 | 3000 | EC2 | **Nobody** (no SG rule **and** Node bound to 127.0.0.1) | Two independent layers |
-| 22 | EC2 | My IP only | Admin access (next session: Session Manager, then remove) |
+| 22 | EC2 | **Closed** | Admin access is via **Session Manager** (IAM-controlled, no open port) |
 | 3306 | RDS | EC2 SG only, Public access = No | DB never on the internet |
 
 ### `0.0.0.0` vs `127.0.0.1`
@@ -208,10 +209,15 @@ Sits in front of the app on port 80 and forwards requests to `127.0.0.1:3000`. T
 - `x-powered-by` disabled: don't advertise your tech stack.
 - **Dependencies patched** (`npm audit fix`). One was **critical**: `proxy-addr` IP spoofing, which mattered because we trust the proxy's `X-Forwarded-For`.
 
-### Still open (next session)
-- DB password in `.env` on disk. Move it to **SSM Parameter Store**, read via an **IAM role**.
-- SSH port 22 open to my IP. Replace with **Session Manager** and delete the rule.
-- The images bucket `dhrey-store-v3` is public (optional: serve it via CloudFront + OAC too).
+### Secrets and admin access (done 8 Nov)
+- **DB password in Parameter Store** (`/trainersdb1/dev/db-password`, SecureString). The backend fetches it at startup using the **EC2 instance role**, so there's **no password in `.env`**.
+- **IAM role = two halves:** the **trust policy** says *who* can use the role (`ec2.amazonaws.com`); the **permissions policies** say *what* it can do (`AmazonSSMManagedInstanceCore` + an inline policy for one parameter and `kms:Decrypt` only via SSM).
+- **Session Manager** replaces SSH: no port 22, no key file, no "My IP" rule to maintain, access controlled by IAM and loggable.
+
+### Still open (optional)
+- The images bucket `dhrey-store-v3` is public (it could be served via CloudFront + OAC too).
+- `/trainersdb1/dev/db-url` is a plain String; fine only if it holds just the endpoint, never a password.
+- Node on EC2 is older than 22 (AWS SDK warning).
 
 ---
 
@@ -324,6 +330,11 @@ The `ec2-api` origin points at EC2's **public DNS**, which changes on every stop
 | `◇ injected env` in the pm2 *error* log | A dotenv notice, not an error | Silenced with `dotenv.config({ quiet: true })`; keep error logs for real errors |
 | "Port 3000 isn't allowed" | It's *meant* to be closed | Know your own design: outside → 80 → Nginx → 127.0.0.1:3000 |
 | A commit didn't reach GitHub | The push failed without an error message | Check with `git status -sb` that nothing is "ahead" |
+| CloudFront 502, and Nginx's access log shows **no** CloudFront requests | Origin domain typed as `ec2-18.130.58.114…` (dots) instead of `ec2-18-130-58-114…` (dashes), so DNS lookup failed | **Copy** values from the console, never retype them. Read the server log to see whether requests arrive at all |
+| SSH hangs with no output | Home IP changed, so the "My IP" rule no longer matched | One reason Session Manager is better: no IP rule to maintain |
+| Session Manager "Not connected", agent log: `no identity-based policy allows ssm:UpdateInstanceInformation` | `AmazonSSMManagedInstanceCore` wasn't attached to the role | Read the agent log (`/var/log/amazon/ssm/amazon-ssm-agent.log`); restart the agent after fixing (it otherwise sleeps 25 min) |
+| `502` straight after `pm2 restart` | Node was still fetching the password from Parameter Store | Wait a second and retry; startup now makes one AWS call first |
+| "Edit trust policy" seemed necessary | Confused the trust policy with the permissions policy | Trust = who may assume the role; permissions = what it may do |
 
 ---
 
@@ -451,16 +462,16 @@ On EC2 the same day: `npm audit fix` (0 vulnerabilities), and pm2 boot start (`p
 **Verify:** `curl -m 5 http://<EC2-IP>/health` from the Mac **times out**; `https://<id>.cloudfront.net/health` → ok.
 **Gotcha:** the prefix list counts as many rules. If the quota is exceeded, put it in its own security group.
 
-## Phase 10: Secrets and admin access ⏳ *next session*
+## Phase 10: Secrets and admin access ✅ (8 Nov)
 **Goal:** no DB password on disk; no open SSH port.
-1. **Systems Manager → Parameter Store → Create:** `/trainers/db-password`, Standard, **SecureString** (`alias/aws/ssm`).
+1. **Systems Manager → Parameter Store → Create:** `/trainersdb1/dev/db-password`, Standard, **SecureString** (`alias/aws/ssm`).
 2. **IAM → Roles → Create** `trainers-ec2-role` (trusted entity EC2) + **AmazonSSMManagedInstanceCore** + inline policy `read-db-password`:
    ```json
    {
      "Version": "2012-10-17",
      "Statement": [
        { "Effect": "Allow", "Action": "ssm:GetParameter",
-         "Resource": "arn:aws:ssm:eu-west-2:<ACCOUNT_ID>:parameter/trainers/db-password" },
+         "Resource": "arn:aws:ssm:eu-west-2:<ACCOUNT_ID>:parameter/trainersdb1/dev/db-password" },
        { "Effect": "Allow", "Action": "kms:Decrypt", "Resource": "*",
          "Condition": { "StringEquals": { "kms:ViaService": "ssm.eu-west-2.amazonaws.com" } } }
      ]
@@ -468,11 +479,17 @@ On EC2 the same day: `npm audit fix` (0 vulnerabilities), and pm2 boot start (`p
    ```
 3. EC2 → Actions → Security → **Modify IAM role** → `trainers-ec2-role`.
 4. EC2 → **Connect → Session Manager**: a terminal in the browser (`sudo su - ec2-user`).
-5. EC2 `.env`: remove `DB_PASSWORD`, add `DB_PASSWORD_PARAM=/trainers/db-password` and `AWS_REGION=eu-west-2` → `pm2 restart trainers --update-env`.
+5. EC2 `.env`: remove `DB_PASSWORD`, add `DB_PASSWORD_PARAM=/trainersdb1/dev/db-password` and `AWS_REGION=eu-west-2` → `pm2 restart trainers --update-env`.
 6. Delete the **SSH 22** rule.
 
-**Verify:** the log says *"DB password loaded from Parameter Store (/trainers/db-password)"*; `/health` ok via CloudFront; SSH no longer connects, Session Manager does.
-*Results and notes: to be added after the session.*
+**Verify:** the log says *"DB password loaded from Parameter Store"*; `/health` ok via CloudFront; SSH no longer connects, Session Manager does.
+
+**Results (8 Nov) ✅**
+- Reused an existing parameter, **`/trainersdb1/dev/db-password`** (SecureString), instead of creating a new one. The inline policy's `Resource` was set to its ARN, copied from the parameter's Overview page.
+- Test from EC2: `aws ssm get-parameter --name /trainersdb1/dev/db-password --with-decryption --region eu-west-2 --query Parameter.Name --output text` → printed the name, so the role works.
+- `.env` changed with `sed` (commented out `DB_PASSWORD`, added `DB_PASSWORD_PARAM` + `AWS_REGION`), checked with `cut -d= -f1 .env` (names only), then the commented password line and the backup deleted.
+- Session Manager first showed "Not connected": the role lacked `AmazonSSMManagedInstanceCore`. Attached it, restarted `amazon-ssm-agent`, connected.
+- SSH rule deleted. **EC2 inbound = HTTP 80 from the CloudFront prefix list only.**
 
 ## Phase 11: Guardrails, automation, merge ⏳ *next session*
 1. **AWS Budgets:** monthly cost budget $10, alert at 80%.
@@ -490,7 +507,7 @@ On EC2 the same day: `npm audit fix` (0 vulnerabilities), and pm2 boot start (`p
 
 **Start (manual, until the scripts are set up):**
 1. RDS → Start → wait for **Available**.
-2. EC2 → Start → copy the new **Public IPv4 DNS**.
+2. EC2 → Start → **copy** (don't retype) the new **Public IPv4 DNS**, written with dashes (`ec2-18-130-…`).
 3. CloudFront → `trainers-store` → Origins → `ec2-api` → Edit → paste the new domain → Save (~5 min).
 4. Check `https://<id>.cloudfront.net/health`.
 
@@ -509,7 +526,7 @@ On EC2 the same day: `npm audit fix` (0 vulnerabilities), and pm2 boot start (`p
 | `DB_HOST` | `<RDS-ENDPOINT>` | RDS address |
 | `DB_PORT` | `3306` | |
 | `DB_USER` | `<RDS-USER>` | |
-| `DB_PASSWORD` *or* `DB_PASSWORD_PARAM` | secret / `/trainers/db-password` | Parameter Store preferred |
+| `DB_PASSWORD` *or* `DB_PASSWORD_PARAM` | secret / `/trainersdb1/dev/db-password` | Parameter Store preferred |
 | `AWS_REGION` | `eu-west-2` | for Parameter Store |
 | `DB_NAME` | `trainers-db1` | |
 | `PORT` | `3000` | |
@@ -538,7 +555,7 @@ On EC2 the same day: `npm audit fix` (0 vulnerabilities), and pm2 boot start (`p
 
 | Group | Inbound |
 |---|---|
-| EC2 | HTTP 80 from `com.amazonaws.global.cloudfront.origin-facing` (SSH 22 from My IP until Phase 10) |
+| EC2 | HTTP 80 from `com.amazonaws.global.cloudfront.origin-facing` (nothing else) |
 | RDS | MySQL 3306 from the EC2 security group |
 
 **Useful commands:**
@@ -594,6 +611,9 @@ An ALB with an ACM certificate (HTTPS to the origin) and an Auto Scaling group a
 13. What stops someone bypassing CloudFront and calling EC2 directly?
 14. After restarting EC2, what's the one CloudFront setting you must update, and why?
 15. What caused the 502 after restarting EC2, and how was it fixed for good?
+16. What's the difference between an IAM role's trust policy and its permissions policies?
+17. Which AWS managed policy does an instance need for Session Manager?
+18. How did you prove the CloudFront 502 wasn't the backend's fault?
 
 <details><summary>Answers</summary>
 
@@ -612,4 +632,7 @@ An ALB with an ACM certificate (HTTPS to the origin) and an Auto Scaling group a
 13. EC2 port 80 only allows CloudFront's managed prefix list, so direct requests time out.
 14. The `ec2-api` origin domain, because EC2's public DNS changes on every stop/start (no Elastic IP).
 15. pm2 had no saved process list and no boot service, so Node didn't start; fixed with `pm2 save` + `pm2 startup` + the printed `sudo` command.
+16. Trust = who may assume the role (here `ec2.amazonaws.com`); permissions = what the role may do.
+17. `AmazonSSMManagedInstanceCore`.
+18. `curl localhost/health` on EC2 returned 200, and Nginx's access log had no CloudFront requests, so CloudFront never reached EC2. The cause was the origin domain (a typo).
 </details>
