@@ -51,16 +51,27 @@
    - ✅ 6D: Session Manager connected; SSH 22 rule deleted. EC2 inbound = only HTTP 80 from CloudFront
    - Optional: `/trainersdb1/dev/db-url` (String) — keep only if it holds just the endpoint, never a password
 
-7. **Automate & document**
-   - ✅ `scripts/aws-start.sh`, `aws-stop.sh`, `deploy-frontend.sh` (tested with a mocked AWS CLI)
+7. ✅ **Automate & document** (done 2026-11-08)
+   - ✅ `scripts/aws-start.sh`, `aws-stop.sh`, `deploy-frontend.sh`
    - ✅ `README.md` with architecture, decisions, setup
-   - 7A: AWS Budgets ($10/month, alert at 80%)
-   - 7B: EventBridge Scheduler nightly stop (RDS StopDBInstance + EC2 StopInstances)
-   - 7C: Mac: `brew install jq`, `aws configure`, fill `scripts/aws.env` → first real run of the scripts
-   - 7D: merge https://github.com/DhreyO/trainers.backend/pull/1 into `main`
-   - 7E (optional): upgrade Node on EC2 to 22 (AWS SDK warning)
+   - ✅ 7A: AWS Budgets (existing £10 monthly budget with email alert)
+   - ✅ 7B: EventBridge Scheduler `trainers-stop-rds-nightly` + `trainers-stop-ec2-nightly`, 23:00 Europe/London, role `trainers-scheduler-role` (rds:StopDBInstance + ec2:StopInstances only)
+   - ✅ 7C: Mac: AWS CLI v2 installed, signed in with `aws login` (temporary credentials, no access keys), `~/trainers-backend-ops/scripts/aws.env` filled in and read-only test passed
+   - ✅ 7D: PR merged into `main`
+   - Optional: upgrade Node on EC2 to 22 (AWS SDK warning)
 
-## ⚠️ Start-up (CloudFront needs EC2's new address)
+## 🎉 Project complete
+Live at `https://<id>.cloudfront.net`: browse, details, S3 images, cart, checkout → RDS.
+
+## Daily start-up / shut-down (from the Mac)
+```bash
+cd ~/trainers-backend-ops
+aws login                # if the CLI session has expired
+./scripts/aws-start.sh   # RDS → EC2 → re-point CloudFront → health check → prints site URL
+./scripts/aws-stop.sh    # EC2 → RDS
+```
+
+### Manual fallback (CloudFront needs EC2's new address)
 1. Start RDS → wait for **Available** → start EC2
 2. **Copy** (don't type) EC2's new **Public IPv4 DNS** — it uses dashes: `ec2-18-130-58-114…`, not dots → CloudFront → `trainers-store` → **Origins** → `ec2-api` → **Edit** → paste the new domain → Save (≈5 min to deploy)
    (once 7C is set up, `./scripts/aws-start.sh` does all of this automatically)

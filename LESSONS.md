@@ -18,7 +18,7 @@ My study guide for this project, built to practise the AWS Solutions Architect A
 | 8 Oct 2026 | Cost analysis (RDS ran 24/7), **Nginx** reverse proxy, port 3000 closed, admin key + rate limiting, frontend prepared for CloudFront |
 | 2 Nov 2026 | Fixed pm2 auto-start and dependency vulnerabilities, production build, **S3 + CloudFront (OAC)** live over HTTPS, **EC2 locked to CloudFront only** |
 | 8 Nov 2026 | Fixed CloudFront 502 (origin typo), **DB password from Parameter Store via IAM role**, **Session Manager** working, **SSH port closed**. EC2 now has a single inbound rule (HTTP 80 from CloudFront) |
-| _Next_ | Budgets, nightly stop, scripts on the Mac, merge PR, Node 22 |
+| 8 Nov 2026 (cont.) | **Nightly auto-stop** (EventBridge Scheduler), AWS CLI on the Mac with **`aws login`**, start/stop scripts configured, **PR merged into `main`**. 🎉 Project complete |
 
 ---
 
@@ -271,7 +271,7 @@ Go **hop by hop** from the user towards the database, and test each hop on its o
 | **Design Secure Architectures** | Private S3 + **OAC**, EC2 restricted to the **CloudFront prefix list**, SG referencing for RDS, private RDS, localhost bind + reverse proxy, secrets out of git, patched dependencies (next: IAM role + Parameter Store, Session Manager) |
 | **Design Resilient Architectures** | Health check endpoint, pm2 auto-restart and boot start, DB transactions, stateless app tier (could sit behind ALB/ASG) |
 | **Design High-Performing Architectures** | **CloudFront CDN** (edge caching for static files, caching disabled for live API), images direct from S3, connection pooling |
-| **Design Cost-Optimized Architectures** | Cost Explorer analysis, right-size check, stop/start, 7-day restart awareness, IPv4/EIP trade-off, snapshot/restore, free-tier CloudFront, Budgets |
+| **Design Cost-Optimized Architectures** | Cost Explorer analysis, right-size check, stop/start scripts, **EventBridge Scheduler nightly stop** (covers the 7-day restart), IPv4/EIP trade-off, snapshot/restore, free-tier CloudFront, Budgets |
 
 ---
 
@@ -332,6 +332,10 @@ The `ec2-api` origin points at EC2's **public DNS**, which changes on every stop
 | A commit didn't reach GitHub | The push failed without an error message | Check with `git status -sb` that nothing is "ahead" |
 | CloudFront 502, and Nginx's access log shows **no** CloudFront requests | Origin domain typed as `ec2-18.130.58.114…` (dots) instead of `ec2-18-130-58-114…` (dashes), so DNS lookup failed | **Copy** values from the console, never retype them. Read the server log to see whether requests arrive at all |
 | SSH hangs with no output | Home IP changed, so the "My IP" rule no longer matched | One reason Session Manager is better: no IP rule to maintain |
+| `zsh: command not found: aws` / `brew` | No Homebrew on the Mac | Install the AWS CLI from AWS's `.pkg`; `jq` is built into macOS |
+| `curl (23)` / `installer: command not found` | Mac install commands run in the **EC2** browser terminal | Check the prompt: `dhrey@Mac … %` is the Mac; `sh-5.2$` / `[ec2-user@…]$` is the server |
+| `Cannot open file for writing` in nano | The `scripts/` folder didn't exist (wrong folder or branch) | `git remote -v` + `ls scripts` before editing; nano saves with `control+X` → `Y` → Enter |
+| Scheduler couldn't create its role | Console auto-create failed | Create the role in IAM: trust `scheduler.amazonaws.com`, then "Use existing role" |
 | Session Manager "Not connected", agent log: `no identity-based policy allows ssm:UpdateInstanceInformation` | `AmazonSSMManagedInstanceCore` wasn't attached to the role | Read the agent log (`/var/log/amazon/ssm/amazon-ssm-agent.log`); restart the agent after fixing (it otherwise sleeps 25 min) |
 | `502` straight after `pm2 restart` | Node was still fetching the password from Parameter Store | Wait a second and retry; startup now makes one AWS call first |
 | "Edit trust policy" seemed necessary | Confused the trust policy with the permissions policy | Trust = who may assume the role; permissions = what it may do |
@@ -491,13 +495,19 @@ On EC2 the same day: `npm audit fix` (0 vulnerabilities), and pm2 boot start (`p
 - Session Manager first showed "Not connected": the role lacked `AmazonSSMManagedInstanceCore`. Attached it, restarted `amazon-ssm-agent`, connected.
 - SSH rule deleted. **EC2 inbound = HTTP 80 from the CloudFront prefix list only.**
 
-## Phase 11: Guardrails, automation, merge ⏳ *next session*
+## Phase 11: Guardrails, automation, merge ✅ (8 Nov)
 1. **AWS Budgets:** monthly cost budget $10, alert at 80%.
 2. **EventBridge Scheduler:** daily 23:00 → RDS `StopDBInstance` `{"DbInstanceIdentifier":"trainers-db1"}`, and EC2 `StopInstances`.
 3. **Scripts on the Mac:** `brew install jq`, `aws configure`, `cp scripts/aws.env.example scripts/aws.env` (instance ID, distribution ID, bucket) → first real run of `./scripts/aws-stop.sh` / `./scripts/aws-start.sh`.
 4. **Merge** https://github.com/DhreyO/trainers.backend/pull/1 into `main`.
 
-*Results and notes: to be added after the session.*
+**Results (8 Nov) ✅**
+- **Budgets:** an existing £10 monthly cost budget with an email alert was already in place.
+- **Scheduler:** two schedules, `trainers-stop-rds-nightly` (RDS `StopDBInstance`, `{"DbInstanceIdentifier":"trainers-db1"}`) and `trainers-stop-ec2-nightly` (EC2 `StopInstances`, `{"InstanceIds":["i-…"]}`). Cron `0 23 * * ? *` (in the console's six boxes: `0 | 23 | * | * | ? | *`; one day box must be `?`), Europe/London, flexible window off, retries off, **Enabled**.
+- The console couldn't auto-create the scheduler role, so it was made by hand: `trainers-scheduler-role`, trust policy for `scheduler.amazonaws.com`, inline policy allowing only `rds:StopDBInstance` and `ec2:StopInstances`. One role, used by both schedules.
+- **Mac:** no Homebrew, so the AWS CLI came from AWS's `.pkg` installer (`jq` ships with macOS). Signed in with **`aws login`** (browser sign-in, temporary credentials, no access keys on disk).
+- Scripts run from a fresh clone at `~/trainers-backend-ops`; `scripts/aws.env` holds `EC2_ID` and `CF_DISTRIBUTION_ID` (git-ignored). Read-only test: `describe-instances` → `running`, `get-distribution` → the `d….cloudfront.net` name.
+- **Merged** PR #1 into `main` (its ~600 "changed files" were mostly old committed `node_modules` being removed).
 
 ---
 
@@ -511,9 +521,16 @@ On EC2 the same day: `npm audit fix` (0 vulnerabilities), and pm2 boot start (`p
 3. CloudFront → `trainers-store` → Origins → `ec2-api` → Edit → paste the new domain → Save (~5 min).
 4. Check `https://<id>.cloudfront.net/health`.
 
-**Start (after Phase 11):** `./scripts/aws-start.sh`
+**Start (from the Mac):**
+```bash
+cd ~/trainers-backend-ops
+aws login              # only if the CLI session has expired
+./scripts/aws-start.sh
+```
 
-**Stop:** EC2 → **Stop** (never Terminate), then RDS → **Stop temporarily**. Or run `./scripts/aws-stop.sh`. Remember the **7-day** RDS auto-restart.
+**Stop:** `./scripts/aws-stop.sh` (or EC2 → **Stop**, never Terminate, then RDS → **Stop temporarily**). If you forget, the **23:00 schedules** stop both, and they also catch RDS's 7-day auto-restart.
+
+**Connect to EC2:** EC2 → instance → **Connect → Session Manager** → `sudo su - ec2-user`. There is no SSH.
 
 **Deploy a frontend change:** `./scripts/deploy-frontend.sh` (build → S3 → invalidate `index.html`).
 
@@ -614,6 +631,8 @@ An ALB with an ACM certificate (HTTPS to the origin) and an Auto Scaling group a
 16. What's the difference between an IAM role's trust policy and its permissions policies?
 17. Which AWS managed policy does an instance need for Session Manager?
 18. How did you prove the CloudFront 502 wasn't the backend's fault?
+19. Why does the cron need `?` in one of the day fields?
+20. Why is `aws login` better than an access key on your laptop?
 
 <details><summary>Answers</summary>
 
@@ -635,4 +654,6 @@ An ALB with an ACM certificate (HTTPS to the origin) and an Auto Scaling group a
 16. Trust = who may assume the role (here `ec2.amazonaws.com`); permissions = what the role may do.
 17. `AmazonSSMManagedInstanceCore`.
 18. `curl localhost/health` on EC2 returned 200, and Nginx's access log had no CloudFront requests, so CloudFront never reached EC2. The cause was the origin domain (a typo).
+19. AWS cron can't specify both day-of-month and day-of-week; `?` means "no specific value" for one of them.
+20. It gives short-lived credentials through your console sign-in; there's no long-lived secret on disk to leak.
 </details>
