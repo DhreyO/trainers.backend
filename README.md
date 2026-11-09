@@ -9,6 +9,8 @@ A small e-commerce store (browse trainers, view details, cart, checkout) built t
 
 ## Architecture
 
+![Trainers Store AWS architecture](docs/architecture.png)
+
 ```
                         HTTPS (CloudFront default certificate)
   User ──────────────► CloudFront ─┬─ /*                      ──► S3 site bucket (private, OAC)
