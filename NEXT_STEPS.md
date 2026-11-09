@@ -6,7 +6,7 @@
 - Frontend (React + Vite) works locally: browse, details, images, cart, checkout
 - Orders saved to RDS `orders` table, stock decremented
 - CORS, `/health` (checks DB), rate limiting, admin key on `POST /products`, `HOST` setting for Nginx
-- All backend work is on branch `claude/aws-trainer-retrieval-issue-5jfgac` (not merged to `main` yet)
+- All backend work is merged into `main`
 
 ## Before the break 💤
 - [ ] Stop EC2, then stop RDS
@@ -79,6 +79,3 @@ aws login                # if the CLI session has expired
 
 ## Study notes
 See `LESSONS.md` for an in-depth explanation of everything built, plus interview questions and a quiz.
-
-## Ask Claude to pick up from
-> "Continue from NEXT_STEPS.md in trainers.backend — I'm on step N."
